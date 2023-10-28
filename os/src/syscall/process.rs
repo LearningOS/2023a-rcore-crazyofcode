@@ -1,11 +1,10 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
-    task::{exit_current_and_run_next, suspend_current_and_run_next, TaskStatus},
-    timer::get_time_us, syscall::{SYSCALL_TASK_INFO},
+    task::{exit_current_and_run_next, suspend_current_and_run_next, TaskStatus, get_current_status, get_current_syscall_times, get_current_start_time},
+    timer::{get_time_us, get_time_ms},
 };
-use core::ptr;
-use crate::task::time_begin;
+
 
 #[repr(C)]
 #[derive(Debug)]
@@ -56,18 +55,12 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info");
     
-    if !_ti.is_null() {
-    let mut existing_taskinfo = unsafe { ptr::read(_ti) };
-        
-        existing_taskinfo.status = TaskStatus::Running;
-        existing_taskinfo.syscall_times[SYSCALL_TASK_INFO] += 1;
-        existing_taskinfo.time = get_time_us() - time_begin();
-        
-        // Use ptr::write to write the updated TaskInfo back to ti
-        unsafe { ptr::write(_ti, existing_taskinfo) };
-
-        return 0;
+    unsafe {
+        (*_ti).status = get_current_status();
+        let now_time = get_time_ms();
+        (*_ti).syscall_times = get_current_syscall_times();
+        (*_ti).time = now_time - get_current_start_time();
     }
 
-    -1
+    0
 }
