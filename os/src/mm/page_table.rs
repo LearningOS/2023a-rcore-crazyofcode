@@ -5,16 +5,25 @@ use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
 
+
 bitflags! {
     /// page table entry flags
     pub struct PTEFlags: u8 {
+        /// vaild
         const V = 1 << 0;
+        /// read
         const R = 1 << 1;
+        /// write
         const W = 1 << 2;
+        /// excute
         const X = 1 << 3;
+        /// user
         const U = 1 << 4;
+        /// ignore
         const G = 1 << 5;
+        /// accessed
         const A = 1 << 6;
+        /// dirty
         const D = 1 << 7;
     }
 }
@@ -170,4 +179,20 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// whether to be mapped
+pub fn virtaddr_mapped(token: usize, vpn: VirtPageNum) -> bool {
+    let pg = PageTable::from_token(token);
+    if let Some(addr) = pg.find_pte(vpn) {
+        if addr.is_valid() {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    else {
+        return false;
+    }
 }

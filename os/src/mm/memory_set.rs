@@ -40,6 +40,23 @@ pub struct MemorySet {
 }
 
 impl MemorySet {
+    /// map implement
+    pub fn map(&mut self, vpn_range: VPNRange, permission: PTEFlags) {
+        let flags = PTEFlags::V | PTEFlags::U | permission;
+        for vpn in vpn_range {
+            let frame = frame_alloc().unwrap();
+            let ppn = frame.ppn;
+            self.page_table.map(vpn, ppn, flags);
+        }
+    }
+
+    /// unmap implement
+    pub fn unmap(&mut self, vpn_range: VPNRange) {
+        for vpn in vpn_range {
+            self.page_table.unmap(vpn);
+        }
+    }
+
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {

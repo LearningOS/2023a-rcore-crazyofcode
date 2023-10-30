@@ -14,8 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{PTEFlags, VPNRange};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_us;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -80,6 +83,7 @@ impl TaskManager {
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
+        next_task.start_time = get_time_us();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -139,10 +143,13 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
-            inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].task_status = TaskStatus::Running;  
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+            if inner.tasks[next].start_time == 0{
+               inner.tasks[next].start_time = get_time_us(); 
+            }
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
@@ -153,8 +160,73 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    fn get_task_status(&self) -> TaskStatus {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let ret = inner.tasks[current].task_status;
+        drop(inner);
+        ret
+    }
+    fn get_current_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let ret = inner.tasks[current].syscall_counter;
+        drop(inner);
+        ret
+    }
+    fn get_start_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let ret = inner.tasks[current].start_time;
+        drop(inner);
+        ret
+    }
+    fn update_current_syscall_times(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_counter[id] += 1;
+        drop(inner);
+    }
+
+    fn insert_map(&self, range: VPNRange, permission: PTEFlags) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.map(range, permission)
+    }
+
+    fn unset_map(&self, range: VPNRange) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.unmap(range);
+    }
 }
 
+/// insert map
+pub fn insert_map(range: VPNRange, permission: PTEFlags) {
+    TASK_MANAGER.insert_map(range, permission);
+}
+
+///unset map
+pub fn unset_map(range: VPNRange) {
+    TASK_MANAGER.unset_map(range);
+}
+/// get start_time
+pub fn get_start_time() -> usize {
+    TASK_MANAGER.get_start_time()
+}
+/// update current syscall times
+pub fn update_current_syscall_times(id: usize) {
+    TASK_MANAGER.update_current_syscall_times(id);
+}
+/// get_task_status
+pub fn get_status() -> TaskStatus {
+    TASK_MANAGER.get_task_status()
+}
+
+/// get current syscall times
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    TASK_MANAGER.get_current_syscall_times()
+}
 /// Run the first task in task list.
 pub fn run_first_task() {
     TASK_MANAGER.run_first_task();
